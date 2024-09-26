@@ -1,2 +1,7 @@
-# FMM-BEM-
-Fast Multipole Boundary Element Method
+# FMM-BEM- first try
+Fast Multipole Boundary Element Method!!!
+
+
+
+
+
