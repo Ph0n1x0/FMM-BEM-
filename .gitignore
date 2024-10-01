@@ -1,1 +1,36 @@
+# Archivos de compilación
+*.o
+*.so
+*.exe
+*.dll
+*.out
+build/
+bin/
+lib/
+
+# Archivos de CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Archivos de configuración de editores
+.vscode/
+.idea/
+cmake-build-debug/
+
+# Archivos temporales y logs
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Entornos virtuales y dependencias de Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Variables de entorno
+.env
 
