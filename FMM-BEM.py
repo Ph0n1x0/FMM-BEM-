@@ -15,7 +15,7 @@ from numpy.linalg import norm, solve
 import matplotlib.pyplot as plt
 import meshio
 from pyqtree import Index
-
+from quadtree import Quadtree
 
 #%% Pre-process
 
@@ -91,7 +91,7 @@ def calcular_bbox(coords):
     
     return bbox
 
-def crear_quadtree(coords):
+def create_quadtree(coords):
     """
     Crea un QuadTree a partir de una lista de puntos.
     
