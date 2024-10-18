@@ -19,6 +19,7 @@ class Quadtree:
         if len(self.points) > max_points and depth < max_depth:
             self.subdivide()
 
+
     def subdivide(self):
         xmin, ymin, xmax, ymax = self.bounds
         width = xmax - xmin
@@ -38,6 +39,10 @@ class Quadtree:
             if qpoints:
                 child = Quadtree(quad, qpoints, self.max_points, self.depth + 1, self.max_depth, self)
                 self.children.append(child)
+            elif not qpoints:
+                child = Quadtree(quad,[],self.max_points, self.depth + 1,max_depth=0)
+                self.children.append(child)
+                
 
     def point_in_bounds(self, point, bounds):
         x, y = point
