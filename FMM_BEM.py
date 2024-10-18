@@ -17,9 +17,7 @@ from scipy.sparse.linalg import gmres, LinearOperator
 #create quadtree
 
 def create_quad_tree_w_msh_file(file_name, max_points_quad, max_depth):
-
     """Read the .msh file from gmsh and create Quadtree structure
-
     Parameters
     ----------
     file_name : str
@@ -27,34 +25,38 @@ def create_quad_tree_w_msh_file(file_name, max_points_quad, max_depth):
     max_points_quad : int
         Number of max. points per division
     max_depth : int
-        Numer of max. depth allowed in the quadtree structure
-
+        Number of max. depth allowed in the quadtree structure
     Returns
     -------
     Quadtree : Object
         Quadtree Object
-
-    boundary_points : List
-        List of boundary points computed 
-
+    boundary_points : ndarray
+        Array of boundary points computed 
     """
     
-    #read mesh file
+    # Read mesh file
     mesh = meshio.read(file_name)
-
-    # Extraer puntos y celdas de la frontera
+    
+    # Extract points and boundary cells
     points = mesh.points
     boundary_cells = mesh.cells_dict.get("line", [])
     boundary_point_indices = set(boundary_cells.flatten())
     boundary_points = points[list(boundary_point_indices), :2]  # 2D
-
-    # lims
+    
+    # Calculate limits with expansion
     xmin, ymin = boundary_points.min(axis=0)
     xmax, ymax = boundary_points.max(axis=0)
-
-    # crear quadtree
-    quadtree = Quadtree([xmin, ymin, xmax, ymax], boundary_points, max_points=max_points_quad, max_depth=max_depth)  #default 
-
+    
+    # Expand bounding box by 5%
+    dx = (xmax - xmin) * 0.05
+    dy = (ymax - ymin) * 0.05
+    xmin, ymin = xmin - dx, ymin - dy
+    xmax, ymax = xmax + dx, ymax + dy
+    
+    # Create quadtree
+    bounds = [xmin, ymin, xmax, ymax]
+    quadtree = Quadtree(bounds, boundary_points, max_points=max_points_quad, max_depth=max_depth)
+    
     return quadtree, boundary_points
 
 #upward and downward
@@ -65,8 +67,7 @@ def upward_pass(node, order):
     """
     if not node.children:
         # Si es un nodo hoja, calcula los momentos multipolares.
-        center = [(node.bounds[0] + node.bounds[2]) / 2, 
-                  (node.bounds[1] + node.bounds[3]) / 2]
+        center = node.center
         node.multipole_moments = compute_multipole_moments(node.points, center, order)
     else:
         # Si no es hoja, acumula los momentos de los hijos.
@@ -91,13 +92,12 @@ def downward_pass(node, order):
     results = {}  # Diccionario para almacenar las expansiones locales por nodo
 
     if node.children:  # Si el nodo tiene hijos
-        node_center = [(node.bounds[0] + node.bounds[2]) / 2,
-                       (node.bounds[1] + node.bounds[3]) / 2]
+
+        node_center = node.center
 
         # Propagamos las expansiones hacia cada hijo.
         for child in node.children:
-            child_center = [(child.bounds[0] + child.bounds[2]) / 2,
-                            (child.bounds[1] + child.bounds[3]) / 2]
+            child_center = child.center
 
             dx = child_center[0] - node_center[0]
             dy = child_center[1] - node_center[1]
