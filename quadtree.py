@@ -19,7 +19,6 @@ class Quadtree:
         if len(self.points) > max_points and depth < max_depth:
             self.subdivide()
 
-
     def subdivide(self):
         xmin, ymin, xmax, ymax = self.bounds
         width = xmax - xmin
@@ -41,8 +40,36 @@ class Quadtree:
                 self.children.append(child)
             elif not qpoints:
                 child = Quadtree(quad,[],self.max_points, self.depth + 1,max_depth=0)
-                self.children.append(child)
-                
+                self.children.append(child)    
+
+    def is_adjacent(self, other):
+        """
+        Verifica si otro nodo es adyacente al nodo actual.
+        """
+        xmin, ymin, xmax, ymax = self.bounds
+        oxmin, oymin, oxmax, oymax = other.bounds
+
+        # Verifica si las cajas delimitadoras son adyacentes
+        return not (xmax < oxmin or xmin > oxmax or ymax < oymin or ymin > oymax)
+
+    def compute_interaction_list(self):
+        """
+        Calcula la lista de interacción para el nodo actual en el Quadtree.
+        """
+        interaction_list = []
+
+        # Si el nodo tiene un padre, verificamos las células bien separadas
+        if self.parent:
+            # Obtener las células adyacentes del padre
+            parent_adjacent_cells = [child for child in self.parent.children if child != self]
+
+            # Verificar si los hijos de las células adyacentes no son adyacentes
+            for adjacent in parent_adjacent_cells:
+                for child in adjacent.children:
+                    if not self.is_adjacent(child):
+                        interaction_list.append(child)
+
+        return interaction_list
 
     def point_in_bounds(self, point, bounds):
         x, y = point
