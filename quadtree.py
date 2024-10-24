@@ -12,7 +12,7 @@ class Quadtree:
         self.multipole_moments = np.zeros(max_points + 1, dtype=complex)
         self.local_expansion = np.zeros(max_points + 1, dtype=complex)
         
-        # Calcula el centro del nodo
+        # compute the node center
         xmin, ymin, xmax, ymax = self.bounds
         self.center = ((xmin + xmax) / 2, (ymin + ymax) / 2)
 
@@ -25,7 +25,8 @@ class Quadtree:
         height = ymax - ymin
         size = max(width, height)
         xmid, ymid = self.center
-
+        
+        #define quadrants from lower left corner counter-clockwise
         quadrants = [
             [xmin, ymin, xmid, ymid],
             [xmid, ymin, xmin + size, ymid],
@@ -38,32 +39,32 @@ class Quadtree:
             if qpoints:
                 child = Quadtree(quad, qpoints, self.max_points, self.depth + 1, self.max_depth, self)
                 self.children.append(child)
-            elif not qpoints:
+            elif not qpoints: #define empty quads 
                 child = Quadtree(quad,[],self.max_points, self.depth + 1,max_depth=0)
                 self.children.append(child)    
 
     def is_adjacent(self, other):
         """
-        Verifica si otro nodo es adyacente al nodo actual.
+        Check if another node is adjacent to the actual node
         """
         xmin, ymin, xmax, ymax = self.bounds
         oxmin, oymin, oxmax, oymax = other.bounds
-
-        # Verifica si las cajas delimitadoras son adyacentes
         return not (xmax < oxmin or xmin > oxmax or ymax < oymin or ymin > oymax)
 
     def compute_interaction_list(self):
         """
-        Calcula la lista de interacción para el nodo actual en el Quadtree.
+        Computes interaction list for the actual quadtree node 
         """
         interaction_list = []
 
-        # Si el nodo tiene un padre, verificamos las células bien separadas
+        # if the node has a parent
         if self.parent:
-            # Obtener las células adyacentes del padre
-            parent_adjacent_cells = [child for child in self.parent.children if child != self]
+            # Obtain the adjacent cells of the parent 
+            parent_adjacent_cells = [child 
+                                     for child in self.parent.children 
+                                     if child != self]
 
-            # Verificar si los hijos de las células adyacentes no son adyacentes
+            # Check if the children of the adjacent cells are not adjacent
             for adjacent in parent_adjacent_cells:
                 for child in adjacent.children:
                     if not self.is_adjacent(child):
@@ -78,23 +79,22 @@ class Quadtree:
 
     def find_point_location(self, point):
         """
-        Encuentra la hoja y el camino de nodos padres para un punto dado.
+        Finds the leaf and parent node path for a given point 
         
         Parameters:
         -----------
         point : tuple
-            Coordenadas (x, y) del punto a buscar.
+            Coords. (x, y) of the given point
         
         Returns:
         --------
         dict
-            Un diccionario con las claves 'leaf' (nodo hoja), 'path' (camino de nodos),
-            y 'depth' (profundidad del nodo hoja).
+            Dict with the keys 'leaf', 'path' and 'depth'
         """
         def _find_recursive(node, point, path):
             path.append(node)
             
-            if not node.children:  # Si es una hoja
+            if not node.children: 
                 return {
                     'leaf': node,
                     'path': path,
