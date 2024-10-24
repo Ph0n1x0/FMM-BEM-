@@ -9,12 +9,12 @@ Boundary Element Method calculations for the Laplace equation.
 
 with mixed (Dirichlet, Neumann) boundary conditions.
 """
+
 import numpy as np
 import meshio
 from quadtree import Quadtree
-from scipy.sparse.linalg import gmres, LinearOperator
-from numpy import log, sin, cos, arctan2, pi, mean
-from numpy.linalg import norm, solve
+from numpy import log, arctan2, pi
+from numpy.linalg import norm
 from scipy.special import comb  
 import matplotlib.pyplot as plt
 
@@ -59,10 +59,10 @@ def read_geo_and_create_quadtree(fname, dir_groups, neu_groups, max_points_quad,
     boundary_points : ndarray
         Array of boundary points computed for the Quadtree.
     """
-    # Leer archivo de malla usando meshio
+    # read file
     mesh = meshio.read(fname)
     
-    # Obtener elementos con condiciones Dirichlet y Neumann
+    # obtain elements with Dirichlet and Neumann conditions
     elems_dir = np.vstack([mesh.cells[k].data for k in dir_groups])
     if neu_groups is None:
         elems_neu = np.array([])
@@ -71,23 +71,23 @@ def read_geo_and_create_quadtree(fname, dir_groups, neu_groups, max_points_quad,
         elems_neu = np.vstack([mesh.cells[k].data for k in neu_groups])
         elems = np.vstack((elems_dir, elems_neu))
     
-    # Obtener nodos de frontera
+    # Obtain boundary nodes
     bound_nodes = list(set(elems.flatten()))
-    coords = mesh.points[bound_nodes, :2]  # Solo usamos las coordenadas 2D
+    coords = mesh.points[bound_nodes, :2]  # 2D
     
-    # Calcular puntos medios de los elementos
+    # Compute middle points of the elements 
     x_m, y_m = 0.5 * (coords[elems[:, 0]] + coords[elems[:, 1]]).T
     
-    # Identificar elementos con condiciones Dirichlet y Neumann
+    # Idx Cfs
     id_dir = range(elems_dir.shape[0])
     id_neu = range(elems_dir.shape[0], elems_dir.shape[0] + elems_neu.shape[0])
     
-    # Extraer puntos de contorno y calcular límites para el Quadtree
+    # Extract boundary points
     boundary_cells = mesh.cells_dict.get("line", [])
     boundary_point_indices = set(boundary_cells.flatten())
-    boundary_points = mesh.points[list(boundary_point_indices), :2]  # Solo en 2D
+    boundary_points = mesh.points[list(boundary_point_indices), :2]  #  2D
     
-    # Calcular límites de los puntos de contorno con una expansión del 5%
+    # lims of quadtree
     xmin, ymin = boundary_points.min(axis=0)
     xmax, ymax = boundary_points.max(axis=0)
     dx = (xmax - xmin) * 0.05
@@ -95,36 +95,32 @@ def read_geo_and_create_quadtree(fname, dir_groups, neu_groups, max_points_quad,
     xmin, ymin = xmin - dx, ymin - dy
     xmax, ymax = xmax + dx, ymax + dy
     
-    # Crear el Quadtree
+    # Creating Quadtree
     bounds = [xmin, ymin, xmax, ymax]
     quadtree = Quadtree(bounds, boundary_points, max_points=max_points_quad, max_depth=max_depth)
-    
-    # Retornar toda la información
+
     return mesh, coords, elems, x_m, y_m, id_dir, id_neu, quadtree, boundary_points
 
 #%% Upward pass
 
 def upward_pass(node, order):
     """
-    Realiza la propagación hacia arriba en el quadtree, acumulando momentos multipolares.
+    Performs upward propagation in the quadtree, accumulating multipole moments.
     """
-    if not node.children:
-        # Si es un nodo hoja, calcula los momentos multipolares.
+    if not node.children: # If the node has not children, Its a leaf         
         center = node.center
-        node.multipole_moments = compute_multipole_moments(node.points, center, order)
-    else:
-        # Si no es un nodo hoja, acumula los momentos de los hijos usando M2M (momento a momento).
+        node.multipole_moments = compute_multipole_moments(node.points, center, order) 
+    else: #if not, accumulates the moments of its children using M2M
         moments = np.zeros(order + 1, dtype=complex)
         for child in node.children:
             child_moments = upward_pass(child, order)
-            # Traducción de momentos desde el hijo al nodo padre (M2M)
             moments += m2m_translation(child_moments, child.center, node.center, order)
         node.multipole_moments = moments
     return node.multipole_moments
 
 def compute_multipole_moments(points, center, order):
     """
-    Calcula los momentos multipolares para los puntos dados en relación al centro del nodo.
+    Calculate the multipolar moments for the given points in relation with the node center
     """
     moments = np.zeros(order + 1, dtype=complex)
     for x, y in points:
@@ -132,25 +128,25 @@ def compute_multipole_moments(points, center, order):
         dy = y - center[1]
         r = np.sqrt(dx**2 + dy**2)
         if r == 0:
-            r = 1e-10  # Evitar singularidades
+            r = 1e-10  #singularity?
         theta = np.arctan2(dy, dx)
-        # Cálculo de los momentos usando el kernel logarítmico
+        # logaritmic kernel
         for p in range(order + 1):
             moments[p] += r**p * np.exp(-1j * p * theta)
     return moments
 
 def m2m_translation(child_moments, child_center, parent_center, order):
     """
-    Traducción de momento a momento (M2M) de un nodo hijo al nodo padre.
+    Translation moment to moment  (M2M) from a child node to the parent node
     """
     dx = child_center[0] - parent_center[0]
     dy = child_center[1] - parent_center[1]
     r = np.sqrt(dx**2 + dy**2)
     if r == 0:
-        r = 1e-10  # Evitar divisiones por cero
+        r = 1e-10  
     theta = np.arctan2(dy, dx)
 
-    # Expansión de Taylor para la traducción de momentos multipolares de hijo a padre.
+    # taylor expansion 
     translated_moments = np.zeros(order + 1, dtype=complex)
     for p in range(order + 1):
         for k in range(p + 1):
@@ -163,58 +159,40 @@ def m2m_translation(child_moments, child_center, parent_center, order):
 
 def downward_pass(node, order):
     """
-    Propaga las expansiones locales hacia abajo en el quadtree usando M2L y L2L.
-    Calcula la lista de interacción en cada nodo.
+    Propagates the local expansions downwards the quadtree using M2L and L2L. 
+    Calculates the list of interactions in each node
     """
-    results = {}  # Diccionario para almacenar las expansiones locales por nodo
-    
-    # Calcular la lista de interacción para el nodo actual
+    results = {}  # dict of results for checking
     interaction_list = node.compute_interaction_list()
 
-    # Si el nodo tiene hijos, continuamos con la propagación descendente
-    if node.children:
-        node_center = node.center
 
-        # Para cada hijo del nodo actual, realizamos la traducción L2L
+    if node.children: 
+        node_center = node.center
+        # Realizing L2L translation for each child of the actual node
         for child in node.children:
             child_center = child.center
             dx = child_center[0] - node_center[0]
             dy = child_center[1] - node_center[1]
 
-            # Realizamos la traducción L2L (Local a Local) desde el nodo padre al hijo
+            # L2L from the parent to the child
             child.local_expansion = l2l_translation(node.local_expansion, dx, dy, order)
 
-            # Llamada recursiva para continuar la propagación hacia los hijos
+            # recursive to keep propagation
             results[child] = downward_pass(child, order)
 
-    # Calcular la contribución de las células bien separadas mediante M2L
+    # Computes the contribution of the well-separated cells with M2L
     for source_node in interaction_list:
         dx = node.center[0] - source_node.center[0]
         dy = node.center[1] - source_node.center[1]
-        # Realizamos la traducción M2L (Momento a Local) usando la expansión multipolar del nodo fuente
         node.local_expansion += m2l_translation(source_node.multipole_moments, dx, dy, order)
 
-    # Almacena la expansión local del nodo actual y retorna los resultados
     results[node] = node.local_expansion
     return results
 
 def l2l_translation(local_expansion_parent, dx, dy, order):
     """
-    Traducción Local-to-Local (L2L).
+    Translation Local-to-Local (L2L).
     
-    Parameters:
-    -----------
-    local_expansion_parent : ndarray
-        Expansión local del nodo padre
-    dx, dy : float
-        Desplazamiento relativo
-    order : int
-        Orden de la expansión
-    
-    Returns:
-    --------
-    ndarray
-        Expansión local traducida
     """
     r = np.sqrt(dx**2 + dy**2)
     if r < 1e-10:
@@ -236,7 +214,7 @@ def l2l_translation(local_expansion_parent, dx, dy, order):
 
 def m2l_translation(multipole_moments, dx, dy, order):
     """
-    Traducción Multipole-to-Local (M2L).
+    Translation Multipole-to-Local (M2L).
     """
     r = np.sqrt(dx**2 + dy**2)
     if r < 1e-10:
@@ -298,7 +276,8 @@ def influence_coeff(elem, coords, pt_col):
     return -G_coeff/(2*pi), H_coeff/(2*pi)
 
 def assem_fmm(coords, elems, quadtree, order):
-    """Assembly matrices for the BEM problem with FMM
+    """
+    Assembly matrices for the BEM problem with FMM
     
     Parameters
     ----------
@@ -322,45 +301,41 @@ def assem_fmm(coords, elems, quadtree, order):
     Gmat = np.zeros((nelems, nelems))
     Hmat = np.zeros((nelems, nelems))
 
-    # Paso ascendente: computamos las expansiones multipolares hacia arriba en el quadtree
     upward_pass(quadtree, order)
-
-    # Paso descendente: propagamos las expansiones locales hacia abajo
     downward_results = downward_pass(quadtree, order)
 
-    # Ensamblamos las matrices de influencia
+    # Assembling the influence matrices 
     for ev_cont, elem1 in enumerate(elems):
         for col_cont, elem2 in enumerate(elems):
             pt_col = np.mean(coords[elem2], axis=0)
 
-            # Usamos find_point_location para obtener los nodos correspondientes a cada elemento
+            # obtaining the nodes of each element
             node_info1 = quadtree.find_point_location(np.mean(coords[elem1], axis=0))
             node_info2 = quadtree.find_point_location(pt_col)
             
             node1 = node_info1['leaf']
             node2 = node_info2['leaf']
 
-            # Si los nodos son adyacentes, calculamos la interacción directamente
+            # Computing directly the interaction if the nodes are adjacents 
             if node1 == node2 or node1.is_adjacent(node2):
                 if ev_cont == col_cont:
-                    # Interacción con sí mismo (diagonal)
+                    # self-interaction
                     L = np.linalg.norm(coords[elem1[1]] - coords[elem1[0]])
                     Gmat[ev_cont, ev_cont] = -L / (2 * np.pi) * (np.log(L / 2) - 1)
                     Hmat[ev_cont, ev_cont] = -0.5
                 else:
-                    # Interacción directa entre elementos cercanos
+                    # Direct interaction between near element 
                     Gij, Hij = influence_coeff(elem1, coords, pt_col)
                     Gmat[ev_cont, col_cont] = Gij
                     Hmat[ev_cont, col_cont] = Hij
             else:
-                # Interacción lejana: utilizamos M2L (multipole to local)
+                # Far interaction using M2L 
                 interaction_list = node1.compute_interaction_list()
                 if node2 in interaction_list:
                     dx = node2.center[0] - node1.center[0]
                     dy = node2.center[1] - node1.center[1]
-                    # Traducción multipolar M2L para interacciones lejanas
-                    Gmat[ev_cont, col_cont] += np.sum(m2l_translation(node2.multipole_moments, dx, dy, order))
-                    Hmat[ev_cont, col_cont] += np.sum(l2l_translation(node2.local_expansion, dx, dy, order))
+                    Gmat[ev_cont, col_cont] += np.sum(m2l_translation(node2.multipole_moments, dx, dy, order)) #???
+                    Hmat[ev_cont, col_cont] += np.sum(l2l_translation(node2.local_expansion, dx, dy, order)) #????
     return Gmat, Hmat
 
 
