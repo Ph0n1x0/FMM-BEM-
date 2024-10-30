@@ -114,7 +114,7 @@ def upward_pass(node, order):
         moments = np.zeros(order + 1, dtype=complex)
         for child in node.children:
             child_moments = upward_pass(child, order)
-            moments += m2m_translation(child_moments, child.center, node.center, order)
+            moments += m2m_translation_c(child_moments, child.center, node.center, order)
         node.multipole_moments = moments
     return node.multipole_moments
 
@@ -135,24 +135,7 @@ def compute_multipole_moments(points, center, order):
             moments[p] += r**p * np.exp(-1j * p * theta)
     return moments
 
-def m2m_translation(child_moments, child_center, parent_center, order):
-    """
-    Translation moment to moment  (M2M) from a child node to the parent node
-    """
-    dx = child_center[0] - parent_center[0]
-    dy = child_center[1] - parent_center[1]
-    r = np.sqrt(dx**2 + dy**2)
-    if r == 0:
-        r = 1e-10  
-    theta = np.arctan2(dy, dx)
 
-    # taylor expansion 
-    translated_moments = np.zeros(order + 1, dtype=complex)
-    for p in range(order + 1):
-        for k in range(p + 1):
-            translated_moments[p] += child_moments[k] * (r**(p-k)) * np.exp(1j * (p-k) * theta)
-    
-    return translated_moments
 
 
 #%% Downward pass
@@ -175,7 +158,7 @@ def downward_pass(node, order):
             dy = child_center[1] - node_center[1]
 
             # L2L from the parent to the child
-            child.local_expansion = l2l_translation(node.local_expansion, dx, dy, order)
+            child.local_expansion = l2l_translation_c(node.local_expansion, dx, dy, order)
 
             # recursive to keep propagation
             results[child] = downward_pass(child, order)
@@ -184,43 +167,35 @@ def downward_pass(node, order):
     for source_node in interaction_list:
         dx = node.center[0] - source_node.center[0]
         dy = node.center[1] - source_node.center[1]
-        node.local_expansion += m2l_translation(source_node.multipole_moments, dx, dy, order)
+        node.local_expansion += m2l_translation_c(source_node.multipole_moments, dx, dy, order)
 
     results[node] = node.local_expansion
     return results
 
-def l2l_translation(local_expansion_parent, dx, dy, order):
+
+
+
+def l2l_translation_c(local_expansion_parent, dx, dy, order):
     """
-    Translation Local-to-Local (L2L).
-    
+    Translation Local-to-Local (L2L) en coordenadas cartesianas.
     """
-    r = np.sqrt(dx**2 + dy**2)
-    if r < 1e-10:
-        return local_expansion_parent.copy()
-        
-    theta = np.arctan2(dy, dx)
     local_expansion_child = np.zeros(order + 1, dtype=complex)
     
     for n in range(order + 1):
         for k in range(n + 1):
             if k < len(local_expansion_parent):
-                binomial = comb(n, k, exact=True)  
+                binomial = comb(n, k, exact=True)
                 local_expansion_child[n] += (
                     binomial * local_expansion_parent[k] * 
-                    (r**(n-k)) * np.exp(1j * (n-k) * theta)
+                    (dx + 1j * dy)**(n - k)
                 )
     
     return local_expansion_child
 
-def m2l_translation(multipole_moments, dx, dy, order):
+def m2l_translation_c(multipole_moments, dx, dy, order):
     """
-    Translation Multipole-to-Local (M2L).
+    Translation Multipole-to-Local (M2L) en coordenadas cartesianas.
     """
-    r = np.sqrt(dx**2 + dy**2)
-    if r < 1e-10:
-        return np.zeros(order + 1, dtype=complex)
-        
-    theta = np.arctan2(dy, dx)
     local_expansion = np.zeros(order + 1, dtype=complex)
     
     for n in range(order + 1):
@@ -228,11 +203,37 @@ def m2l_translation(multipole_moments, dx, dy, order):
             if k < len(multipole_moments):
                 local_expansion[n] += (
                     multipole_moments[k] * 
-                    (-1)**k * (1/r)**(k+n+1) * 
-                    np.exp(-1j * (k+n) * theta)
+                    (-1)**k * (dx - 1j * dy)**(-(k + n + 1))
                 )
     
     return local_expansion
+
+def m2m_translation_c(child_moments, child_center, parent_center, order):
+    """
+    Translation moment-to-moment (M2M) en coordenadas cartesianas,
+    desde un nodo hijo hacia el nodo padre.
+    """
+    dx = child_center[0] - parent_center[0]
+    dy = child_center[1] - parent_center[1]
+
+    # Expansión en serie de Taylor
+    translated_moments = np.zeros(order + 1, dtype=complex)
+    for p in range(order + 1):
+        for k in range(p + 1):
+            if k < len(child_moments):
+                translated_moments[p] += child_moments[k] * (dx + 1j * dy)**(p - k)
+    
+    return translated_moments
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -321,21 +322,21 @@ def assem_fmm(coords, elems, quadtree, order):
                 if ev_cont == col_cont:
                     # self-interaction
                     L = np.linalg.norm(coords[elem1[1]] - coords[elem1[0]])
-                    Gmat[ev_cont, ev_cont] = -L / (2 * np.pi) * (np.log(L / 2) - 1)
-                    Hmat[ev_cont, ev_cont] = -0.5
+                    Gmat[ev_cont, ev_cont] += -L / (2 * np.pi) * (np.log(L / 2) - 1)
+                    Hmat[ev_cont, ev_cont] += -0.5
                 else:
                     # Direct interaction between near element 
                     Gij, Hij = influence_coeff(elem1, coords, pt_col)
-                    Gmat[ev_cont, col_cont] = Gij
-                    Hmat[ev_cont, col_cont] = Hij
+                    Gmat[ev_cont, col_cont] += Gij
+                    Hmat[ev_cont, col_cont] += Hij
             else:
-                # Far interaction using M2L 
-                interaction_list = node1.compute_interaction_list()
-                if node2 in interaction_list:
-                    dx = node2.center[0] - node1.center[0]
-                    dy = node2.center[1] - node1.center[1]
-                    Gmat[ev_cont, col_cont] += np.sum(m2l_translation(node2.multipole_moments, dx, dy, order)) #???
-                    Hmat[ev_cont, col_cont] += np.sum(l2l_translation(node2.local_expansion, dx, dy, order)) #????
+                 # Far interaction using M2L 
+                 interaction_list = node1.compute_interaction_list()
+                 if node2 in interaction_list:
+                     dx = node2.center[0] - node1.center[0]
+                     dy = node2.center[1] - node1.center[1]
+                     Gmat[ev_cont, col_cont] += np.real(m2l_translation_c(node2.multipole_moments, dx, dy, order)[0]) #???
+                     Hmat[ev_cont, col_cont] += np.real(l2l_translation_c(node2.local_expansion, dx, dy, order)[0]) #????
     return Gmat, Hmat
 
 
