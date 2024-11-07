@@ -105,4 +105,4 @@ class Quadtree:
                 if child.point_in_bounds(point, child.bounds):
                     return _find_recursive(child, point, path)
         
-        return _find_recursive(self, point, path=[])
+        return _find_recursive(self, point, path=[])    
