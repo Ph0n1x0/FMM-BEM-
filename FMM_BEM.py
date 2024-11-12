@@ -105,17 +105,18 @@ def read_geo_and_create_quadtree(fname, dir_groups, neu_groups, max_points_quad,
 
 def compute_multipole_moments(points, cell_center, max_order):
     """
-    Calcula los momentos multipolares hasta un orden máximo dado para una celda en 2D.
+    Calculates multipole moments up to a given maximum order for a cell in 2D.
 
-    Parámetros:
-    - points: Lista o array de coordenadas de los puntos en la celda, de tamaño (N, 2).
-    - charges: Array de valores de carga (o intensidad del campo) en cada punto, de tamaño (N,).
-    - cell_center: Coordenadas del centro de la celda, en forma (2,).
-    - max_order: Orden máximo para los momentos multipolares.
+    Parameters:
+    - points: List or array of coordinates for the points in the cell, of size (N, 2).
+    - charges: Array of charge values (or field intensity) at each point, of size (N,).
+    - cell_center: Coordinates of the cell center, in the form (2,).
+    - max_order: Maximum order for the multipole moments.
 
-    Retorna:
-    - moments: Array de momentos multipolares hasta el orden max_order, de tamaño (max_order+1,).
+    Returns:
+    - moments: Array of multipole moments up to max_order, of size (max_order+1,).
     """
+
     # Convertir points en un array de numpy y asegurar que es 2D
     points = np.atleast_2d(np.array(points))
 
@@ -142,7 +143,7 @@ def compute_multipole_moments(points, cell_center, max_order):
 
 def upward_pass(node, order):
     """
-    Realiza la propagación hacia arriba en el quadtree, acumulando momentos multipolares.
+    Performs upward propagation in the quadtree, accumulating multipole moments.
     """
     if not node.children:  # Si es una hoja
         center = node.center
@@ -182,10 +183,8 @@ def l2l_translation(local_expansion_parent, dx, dy, order):
     return local_expansion_child
 
 def downward_pass(node, order):
-    # Inicializar la expansión local
     node.local_expansion = np.zeros(order, dtype=complex)
 
-    # Realizar la traducción M2L para los nodos de la lista de interacción
     interaction_list = node.compute_interaction_list()
     for interacting_node in interaction_list:
         translation = m2l_translation(
@@ -211,16 +210,16 @@ def downward_pass(node, order):
 
 def m2m_translation(child_moments, child_center, parent_center, max_order):
     """
-    Traduce los momentos de un nodo hijo al centro de un nodo padre usando la expansión M2M.
+    Translates the moments of a child node to the center of a parent node using the M2M expansion.
 
-    Parámetros:
-    - child_moments: Array de momentos multipolares del nodo hijo, de tamaño (max_order + 1,).
-    - child_center: Coordenadas del centro del nodo hijo en forma (2,).
-    - parent_center: Coordenadas del centro del nodo padre en forma (2,).
-    - max_order: Orden máximo de los momentos.
+    Parameters:
+    - child_moments: Array of multipole moments for the child node, of size (max_order + 1,).
+    - child_center: Coordinates of the child node center, in the form (2,).
+    - parent_center: Coordinates of the parent node center, in the form (2,).
+    - max_order: Maximum order of the moments.
 
-    Retorna:
-    - translated_moments: Array de momentos multipolares traducidos al centro del nodo padre.
+    Returns:
+    - translated_moments: Array of multipole moments translated to the center of the parent node.
     """
     # Convertir centros a coordenadas complejas
     z_child = child_center[0] + 1j * child_center[1]
